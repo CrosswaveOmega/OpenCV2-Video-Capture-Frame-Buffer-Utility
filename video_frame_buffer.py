@@ -40,29 +40,28 @@ Press ESC to exit the program.
 
 """
 
-
 def compute_frame_difference(
     prev_frame: Optional[np.ndarray],
     curr_frame: np.ndarray,
     pixel_change_min: int = 0,
     pixel_change_max: int = 256,
 ) -> Tuple[np.ndarray, int, float]:
-    '''
+    """
     Compute the difference between two frames via converting it to greyscale, and quantify the changes.
     Parameters:
-        prev_frame (Optional[np.ndarray]): The previous frame to compare against. 
+        prev_frame (Optional[np.ndarray]): The previous frame to compare against.
                                         If None, returns a zeroed difference.
         curr_frame (np.ndarray): The current frame to compare.
-        pixel_change_min (int): The minimum change in the greyscale image to consider 
+        pixel_change_min (int): The minimum change in the greyscale image to consider
                                 a pixel as changed. Default is 0.
-        pixel_change_max (int): The maximum change in the greyscale image to consider 
+        pixel_change_max (int): The maximum change in the greyscale image to consider
                                 a pixel as changed. Default is 256.
     Returns:
         Tuple[np.ndarray, int, float]: A tuple containing:
             - The difference image as a numpy array.
             - The count of changed pixels.
             - The fraction of changed pixels relative to the total number of pixels.
-    '''
+    """
 
     if prev_frame is None:
         diff = curr_frame * 0
@@ -92,7 +91,7 @@ def highlight_diff(
     color: Tuple[int, int, int] = (0, 0, 255),
     intensity: float = 0.7,
 ) -> np.ndarray:
-    '''Highlight the difference in the display window.'''
+    """Highlight the difference in the display window."""
     if len(img_display.shape) == 3:
         img_display = cv2.cvtColor(img_display, cv2.COLOR_BGR2GRAY)
 
@@ -107,7 +106,6 @@ def highlight_diff(
     overlay = np.full_like(img_orig, color, dtype=np.uint8)
 
     return cv2.convertScaleAbs((1 - alpha) * img_orig + alpha * overlay)
-
 
 class FrameViewerConfigMixin:
     """Mixin functions for frameviewer."""
@@ -134,6 +132,7 @@ class FrameViewerConfigMixin:
         if "file_prefix" in cfg:
             self.file_prefix = cfg["file_prefix"]
             self.prefix = f"./{self.name}/{self.file_prefix}{self.name}"
+            self._apply_new_name(cfg["name"])
 
         if "grid_rows" in cfg:
             self.grid_rows = int(cfg["grid_rows"])
@@ -143,8 +142,6 @@ class FrameViewerConfigMixin:
 
         if "history_scrolling_limit" in cfg:
             self.history_scrolling_limit = int(cfg["history_scrolling_limit"])
-
-        
 
         if "change_threshold" in cfg:
             self.change_threshold = float(cfg["change_threshold"])
@@ -174,15 +171,23 @@ class FrameViewerConfigMixin:
         cfg["change_threshold"] = str(self.change_threshold)
         cfg["pixel_change_min"] = str(self.pixel_change_min)
         cfg["pixel_change_max"] = str(self.pixel_change_max)
-        cfg["history_scrolling_limit"]=str(self.history_scrolling_limit)
+        cfg["history_scrolling_limit"] = str(self.history_scrolling_limit)
 
         with path.open("w") as f:
             config.write(f)
 
+def command(name: str):
+    def decorator(func):
+        func._command_name = name
+        return func
+    return decorator
 
 class FrameViewer(FrameViewerConfigMixin):
     """Frame Viewer Class.  This class displays the frame preview"""
 
+    _command_handlers = {}
+
+    
     def __init__(
         self,
         name: str = "FrameBufferOutput",
@@ -234,7 +239,26 @@ class FrameViewer(FrameViewerConfigMixin):
         self.display_h: int = 0
 
         self.flag_resize = False
+        self.KEYMAP = {
+            ord("p"): "TOGGLE_PAUSE",
+            ord("n"): "CHANGE_TARGET_FOLDER",
+            ord("h"): "SHOW_HELP",
+            ord("m"): "SHOW_RESIZE",
+            ord("r"): "REORIENT",
+            ord("w"): "SCROLL_UP",
+            ord("s"): "SCROLL_DOWN",
+            27:       "QUIT",  # ESC
+        }
+        handlers = {}
+        for attr in self.__class__.__dict__.values():
+            name = getattr(attr, "_command_name", None)
+            if name:
+                handlers[name] = attr
+        self.__class__._command_handlers = handlers
 
+
+
+    
     def _apply_new_name(self, target_folder: str) -> None:
         """Change the folder and prefix"""
         self.name = target_folder
@@ -244,8 +268,8 @@ class FrameViewer(FrameViewerConfigMixin):
 
     def _resize(self, grid_cols=0, grid_rows=0) -> None:
         """Change the size of the displayed grid."""
-        
-        if grid_cols==self.grid_cols and grid_rows==self.grid_rows:
+
+        if grid_cols == self.grid_cols and grid_rows == self.grid_rows:
             return
         print("Changing sizes")
         print(grid_cols, grid_rows)
@@ -261,7 +285,6 @@ class FrameViewer(FrameViewerConfigMixin):
             self.flag_resize = True
 
     def mouse_callback(
-        
         self, event: int, x: int, y: int, flags: int, param: Any
     ) -> None:
         """
@@ -302,13 +325,63 @@ class FrameViewer(FrameViewerConfigMixin):
                     self.saved += 1
 
         if int(event) == cv2.EVENT_MOUSEWHEEL:  # scroll up or down.
-            delta_scroll= flags >> 16
-
-            #print(event, x, y, delta_scroll,flags,param)
+            delta_scroll = flags >> 16
             if delta_scroll > 0:
                 self.yg_offset = max(0, self.yg_offset - 1)
             else:
                 self.yg_offset += 1
+
+
+    @command("CHANGE_TARGET_FOLDER")
+    def _change_target_folder(self, frame, stop_event):
+        if self.name_request_q:
+            self.name_request_q.put(("ASK_FOLDER_NAME", None))
+            # block until the main thread provides the name
+            target_folder = self.name_result_q.get()
+            if target_folder:
+                self._apply_new_name(target_folder)
+
+    @command("SHOW_HELP")
+    def _show_help(self, frame, stop_event):
+        if self.name_request_q:
+            self.name_request_q.put(("HELP", None))
+
+
+    @command("REORIENT")
+    def _reorient_frames(self, frame, stop_event):
+        h, w = frame.shape[:2]
+        self.__make_target_size(h, w)
+        self.last_frame = cv2.resize(frame.copy(), self.target_size)
+
+        #frame_small = cv2.resize(frame, self.target_size)
+
+
+    @command("SHOW_RESIZE_DIALOG")
+    def _resize_dialog(self, frame, stop_event):
+        if self.name_request_q:
+            self.name_request_q.put(("RESIZE", None))
+    @command("SCROLL_UP")
+    def _cmd_scroll_up(self, frame, stop_event):
+        self.yg_offset = max(0, self.yg_offset - 1)
+
+    @command("SCROLL_DOWN")
+    def _cmd_scroll_down(self, frame, stop_event):
+        self.yg_offset = max(0, self.yg_offset - 1)
+
+    def keyboard_callback(self, key, frame, stop_event):
+        command = self.KEYMAP.get(key)
+
+        if command:
+            handler = self._command_handlers.get(command)
+            if handler:
+                handler(self, frame, stop_event)
+                return 1
+
+            if command == "QUIT":
+                stop_event.set()
+                return -1
+        return 0
+
 
     def __make_target_size(self, h, w):
         """Redo the target size calculation that scales each frame in the preview window."""
@@ -385,6 +458,10 @@ class FrameViewer(FrameViewerConfigMixin):
             frame_small = cv2.resize(frame, self.target_size)
 
             key = cv2.waitKey(1) & 0xFF
+            value=self.keyboard_callback(key,frame,stop_event)
+            if value==-1:
+                break
+            '''
             if key == ord("p"):
                 self.pause_delay = not self.pause_delay
             elif key == ord("n"):
@@ -396,9 +473,11 @@ class FrameViewer(FrameViewerConfigMixin):
                     if target_folder:
                         self._apply_new_name(target_folder)
             elif key == ord("h"):
+                #SHOW HELP
                 if self.name_request_q:
                     self.name_request_q.put(("HELP", None))
             elif key == ord("m"):
+                # SHOW RESIZE DIALOG
                 if self.name_request_q:
                     self.name_request_q.put(("RESIZE", None))
             elif key == ord("r"):
@@ -408,14 +487,14 @@ class FrameViewer(FrameViewerConfigMixin):
                 self.last_frame = cv2.resize(frame.copy(), self.target_size)
 
                 frame_small = cv2.resize(frame, self.target_size)
-            elif key == ord("w"):  # PAGE UP
+            elif key == ord("w"):  # SCROLL UP ONE
                 self.yg_offset = max(0, self.yg_offset - 1)
-            elif key == ord("s"):  # PAGE DOWN
+            elif key == ord("s"):  # SCROLL DOWN ONE
                 self.yg_offset += 1
             elif key == 27:  # ESCAPE.
                 stop_event.set()
                 break
-            
+            '''
             # Check if the window is closed/open
             if cv2.getWindowProperty(WINDOWNAME, cv2.WND_PROP_VISIBLE) < 1:
                 print("Window closed by user")
@@ -431,7 +510,7 @@ class FrameViewer(FrameViewerConfigMixin):
 
     def recalculate_all(self):
         """Resize all currently available diffs, recalculate the target size, and change the max length of self.diffs."""
-        
+
         print("RECALCULATING!")
 
         _, frame = self.diffs[-1]
@@ -602,6 +681,7 @@ class FrameViewer(FrameViewerConfigMixin):
 
 
 class FrameCapture:
+    '''Class for capturing frames from a video feed.'''
     def __init__(self, cam_index: int = 0, resolution="1920x1080 1080p @ 60Hz") -> None:
         self.cap: cv2.VideoCapture = cv2.VideoCapture(cam_index)
         w, h, fr = self.parse_resolution(resolution)
@@ -657,7 +737,7 @@ def main() -> None:
     # load config file if it exists.
     viewer.load_config("frame_viewer_config.ini")
 
-    # makw queues and stop event
+    # make queues and stop event
     name_request_q = queue.Queue()
     name_result_q = queue.Queue()
 
@@ -666,7 +746,6 @@ def main() -> None:
 
     main_frame_communication_queue = queue.Queue()
     stop_event = threading.Event()
-
 
     # create child threads.
     t1 = threading.Thread(
@@ -690,8 +769,13 @@ def main() -> None:
         except queue.Empty:
             continue
         print(req)
+        # REQUESTS QUEUE
         if req == "ASK_FOLDER_NAME":
-            newname = simpledialog.askstring("Set Target Folder Name", "Enter name of folder to save to:", parent=root)
+            newname = simpledialog.askstring(
+                "Set Target Folder Name",
+                "Enter name of folder to save to:",
+                parent=root,
+            )
 
             name_result_q.put(newname)
         if req == "ASKSAVE":
@@ -708,17 +792,15 @@ def main() -> None:
                 print(f"Saved frame {idx} as {filename}")
             else:
                 print("NO IMAGE DATA RECIEVED!")
-            
+
         if req == "RESIZE":
-            newdial=dialog_boxes.ResizeThresholdDialog(
+            newdial = dialog_boxes.ResizeThresholdDialog(
                 parent=root,
                 title="Change displayed rows, cols, or threshold.",
                 prompt="Set new rows/cols.",
                 initial_columns=viewer.grid_cols,
                 initial_rows=viewer.grid_rows,
-                
                 initial_threshold=viewer.change_threshold,
-
                 minvalue=1,
                 maxvalue=20,
                 threshold_max=1.0,
@@ -726,9 +808,8 @@ def main() -> None:
             )
             w, h, t = newdial.result
             viewer._resize(grid_cols=w, grid_rows=h)
-            
-            viewer.change_threshold = t
 
+            viewer.change_threshold = t
 
         if req == "HELP":
             dialog_boxes.TextDialog(

@@ -13,6 +13,7 @@ from tkinter import messagebox
 
 # Functions related to listing cameras for all platforms
 
+
 def detect_platform():
     if sys.platform.startswith("win"):
         return "windows"
@@ -96,8 +97,9 @@ def list_available_cameras():
         return cams if cams else fallback_opencv()
     return fallback_opencv()
 
+
 def build_resolution_list():
-    '''Create a list of resolutions'''
+    """Create a list of resolutions"""
     base_resolutions = [
         (1280, 720, "720p"),
         (1920, 1080, "1080p"),
@@ -113,8 +115,10 @@ def build_resolution_list():
             resolutions.append(f"{w}x{h} {label} @ {hz}Hz")
 
     return resolutions
+
+
 def open_camera_popup(root):
-    '''Popup that returns selected camera index'''
+    """Popup that returns selected camera index"""
     popup = tk.Toplevel(root)
     popup.title("Select Camera")
     popup.geometry("350x350")
@@ -164,6 +168,7 @@ def open_camera_popup(root):
     popup.wait_window()
 
     return result_var.get(), resolution_var.get()
+
 
 # Simple text dialog, for displaying a help menu with h.
 class TextDialog(Dialog):
@@ -230,9 +235,10 @@ class TextDialog(Dialog):
 
 # Resize dialog.
 class ResizeThresholdDialog(Dialog):
-    '''
+    """
     Dialog for changing the rows/columns to be displayed, along with the
-    frame disposal integer'''
+    frame disposal integer"""
+
     size_errormessage = "columns and rows must be integers."
     threshold_errormessage = "Value must be a number."
 
@@ -362,6 +368,7 @@ class ResizeThresholdDialog(Dialog):
     def apply(self):
         pass
 
+
 if __name__ == "__main__":
     root = tk.Tk()
     root.withdraw()
@@ -369,7 +376,6 @@ if __name__ == "__main__":
     TextDialog(
         root,
         title="Information",
-        
         text=(
             "This is a static dialog based on Dialog.\n\n"
             "It supports multiline text, scrolling, and modal behavior.\n"

@@ -1,5 +1,5 @@
 # Video Capture Frame Screenshot Utility
-Keeps a buffer of video frames taken from a capture card so the user can select and save specific frames as png screenshots with a gui interfase.
+Keeps a buffer of video frames taken from a capture card so the user can select and save specific frames as png screenshots through a gui interface.
 
 # Use Case:
 I needed software that could take in a live video feed from a capture card, determine how different each frame was to the other, and allow me to save chosen differing frames into an output file while dynamically changing the folder to be saved to with a key press.
@@ -24,7 +24,7 @@ Requires Python 3.12 at minimum
 * Click a frame to save it as a png in the specified folder within video_frame_buffer_output
  * You have to enter a name with your keyboard before the image can be saved.
 
-### CONFIG FILE MEANINGS
+### CONFIG FILE PARAMETERS
 [FrameViewer]
 * name = string, The name of folder of the name to save
 * file_prefix = string, What each saved image's file name will start with
